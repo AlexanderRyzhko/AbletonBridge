@@ -138,6 +138,8 @@ _MODIFYING_HANDLERS = {
 
     # --- Clips ---
     "create_clip": lambda song, p, ctrl: handlers.clips.create_clip(song, p.get("track_index", 0), p.get("clip_index", 0), p.get("length", 4.0), ctrl),
+    "create_session_audio_clip": lambda song, p, ctrl: handlers.clips.create_session_audio_clip(
+        song, p.get("track_index", 0), p.get("clip_index", 0), p.get("file_path", ""), ctrl),
     "add_notes_to_clip": lambda song, p, ctrl: handlers.clips.add_notes_to_clip(song, p.get("track_index", 0), p.get("clip_index", 0), p.get("notes", []), ctrl),
     "set_clip_name": lambda song, p, ctrl: handlers.clips.set_clip_name(song, p.get("track_index", 0), p.get("clip_index", 0), p.get("name", ""), ctrl),
     "fire_clip": lambda song, p, ctrl: handlers.clips.fire_clip(song, p.get("track_index", 0), p.get("clip_index", 0), ctrl),

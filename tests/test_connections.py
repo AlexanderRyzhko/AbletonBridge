@@ -66,6 +66,7 @@ class TestAbletonConnectionSendCommand:
         assert "create_midi_track" in NON_IDEMPOTENT_COMMANDS
         assert "delete_track" in NON_IDEMPOTENT_COMMANDS
         assert "add_notes_to_clip" in NON_IDEMPOTENT_COMMANDS
+        assert "create_session_audio_clip" in NON_IDEMPOTENT_COMMANDS
         # Read commands should NOT be in the set
         assert "get_session_info" not in NON_IDEMPOTENT_COMMANDS
 

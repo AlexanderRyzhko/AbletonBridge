@@ -32,6 +32,29 @@ def register_tools(mcp):
         return f"Created new clip at track {track_index}, slot {clip_index} with length {length} beats"
 
     @mcp.tool()
+    @_tool_handler("creating session audio clip")
+    def create_session_audio_clip(ctx: Context, track_index: int, clip_index: int, file_path: str) -> str:
+        """
+        Create a Session View audio clip in the specified audio track and clip slot.
+
+        Parameters:
+        - track_index: The index of the target audio track
+        - clip_index: The target clip slot index
+        - file_path: Absolute path to the source audio file
+        """
+        _validate_index(track_index, "track_index")
+        _validate_index(clip_index, "clip_index")
+        if not isinstance(file_path, str) or not file_path.strip():
+            raise ValueError("file_path must be a non-empty string.")
+        ableton = get_ableton_connection()
+        ableton.send_command("create_session_audio_clip", {
+            "track_index": track_index,
+            "clip_index": clip_index,
+            "file_path": file_path.strip(),
+        })
+        return f"Created session audio clip at track {track_index}, slot {clip_index} from {file_path.strip()}"
+
+    @mcp.tool()
     @_tool_handler("deleting clip")
     def delete_clip(ctx: Context, track_index: int, clip_index: int) -> str:
         """

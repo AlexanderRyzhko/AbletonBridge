@@ -3,6 +3,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import collections.abc
+import os
 
 from ._helpers import get_track, get_clip_slot, get_clip
 
@@ -24,6 +25,36 @@ def create_clip(song, track_index, clip_index, length, ctrl=None):
     except Exception as e:
         if ctrl:
             ctrl.log_message("Error creating clip: " + str(e))
+        raise
+
+
+def create_session_audio_clip(song, track_index, clip_index, file_path, ctrl=None):
+    """Create a Session View audio clip in a specific clip slot from an audio file."""
+    try:
+        track, clip_slot = get_clip_slot(song, track_index, clip_index)
+        if clip_slot.has_clip:
+            raise Exception("Clip slot already has a clip")
+        if not track.has_audio_input:
+            raise ValueError("Track {0} is not an audio track".format(track_index))
+        if not file_path:
+            raise ValueError("file_path is required")
+        if not os.path.isabs(file_path):
+            raise ValueError("file_path must be an absolute path")
+        if not hasattr(clip_slot, "create_audio_clip"):
+            raise Exception("create_audio_clip requires Live 12.2+")
+
+        clip_slot.create_audio_clip(file_path)
+        clip = clip_slot.clip if clip_slot.has_clip else None
+        return {
+            "created": True,
+            "track_index": int(track_index),
+            "clip_index": int(clip_index),
+            "file_path": file_path,
+            "clip_name": clip.name if clip else os.path.basename(file_path),
+        }
+    except Exception as e:
+        if ctrl:
+            ctrl.log_message("Error creating session audio clip: " + str(e))
         raise
 
 

@@ -17,6 +17,7 @@ logger = logging.getLogger("AbletonBridge")
 # because a retry could create duplicate tracks, clips, etc.
 NON_IDEMPOTENT_COMMANDS = frozenset([
     "create_midi_track", "create_audio_track", "create_clip",
+    "create_session_audio_clip",
     "create_return_track", "create_scene", "delete_track",
     "delete_clip", "delete_scene", "delete_device",
     "duplicate_track", "duplicate_clip", "add_notes_to_clip",

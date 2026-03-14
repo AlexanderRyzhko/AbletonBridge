@@ -56,6 +56,7 @@ TIER_1_COMMANDS: frozenset = frozenset([
 # Tier 2: Heavy delay (100ms pre + 100ms post) -- structural/loading changes
 TIER_2_COMMANDS: frozenset = frozenset([
     "create_midi_track", "create_audio_track", "create_clip",
+    "create_session_audio_clip",
     "delete_clip", "delete_track", "duplicate_track",
     "create_return_track", "create_scene", "delete_scene",
     "load_instrument_or_effect", "load_sample", "load_drum_kit",
@@ -76,6 +77,7 @@ MODIFYING_COMMANDS: frozenset = TIER_0_COMMANDS | TIER_1_COMMANDS | TIER_2_COMMA
 SLOW_COMMAND_TIMEOUTS: Dict[str, float] = {
     "load_instrument_or_effect": 30.0,
     "load_sample": 30.0,
+    "create_session_audio_clip": 30.0,
     "load_drum_kit": 30.0,
     "freeze_track": 60.0,
     "unfreeze_track": 30.0,

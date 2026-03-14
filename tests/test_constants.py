@@ -26,3 +26,4 @@ class TestCommandTiers:
         assert "add_notes_to_clip" in TIER_1_COMMANDS
         assert "create_midi_track" in TIER_2_COMMANDS
         assert "load_instrument_or_effect" in TIER_2_COMMANDS
+        assert "create_session_audio_clip" in TIER_2_COMMANDS
