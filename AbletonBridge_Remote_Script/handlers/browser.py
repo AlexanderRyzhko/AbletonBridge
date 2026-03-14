@@ -3,6 +3,10 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import traceback
+try:
+    from urllib import unquote
+except ImportError:
+    from urllib.parse import unquote
 
 from ._helpers import get_track
 
@@ -15,6 +19,20 @@ _BROWSER_ROOTS = (
 
 _MAX_CHILDREN = 200  # cap per-folder iteration to avoid hanging on huge directories
 _MAX_SEARCH_RESULTS = 50  # stop traversal once we have enough matches
+_QUERY_ROOT_MAP = {
+    "instruments": "instruments",
+    "sounds": "sounds",
+    "drums": "drums",
+    "audioeffects": "audio_effects",
+    "midieffects": "midi_effects",
+    "userlibrary": "user_library",
+    "userfolders": "user_folders",
+    "samples": "samples",
+    "packs": "packs",
+    "currentproject": "current_project",
+    "maxforlive": "max_for_live",
+    "plugins": "plugins",
+}
 
 
 def _iter_children(item, max_items=_MAX_CHILDREN):
@@ -37,9 +55,53 @@ def _iter_children(item, max_items=_MAX_CHILDREN):
             yield child
 
 
+def _normalize_query_root(root_label):
+    return root_label.lower().replace(" ", "").replace("_", "")
+
+
+def _find_browser_item_by_query_uri(browser, uri, ctrl=None):
+    """Resolve ``query:Root#A:B:C`` URIs without recursive full-browser scans."""
+    if not uri or not uri.startswith("query:"):
+        return None
+    try:
+        query = uri[len("query:"):]
+        if "#" in query:
+            root_label, raw_path = query.split("#", 1)
+        else:
+            root_label, raw_path = query, ""
+
+        root_attr = _QUERY_ROOT_MAP.get(_normalize_query_root(root_label))
+        if not root_attr or not hasattr(browser, root_attr):
+            return None
+
+        current_item = getattr(browser, root_attr)
+        if not raw_path:
+            return current_item
+
+        path_parts = [unquote(part) for part in raw_path.split(":") if part]
+        for part in path_parts:
+            found = None
+            for child in _iter_children(current_item):
+                if hasattr(child, "name") and child.name == part:
+                    found = child
+                    break
+            if found is None:
+                return None
+            current_item = found
+        return current_item
+    except Exception as e:
+        if ctrl:
+            ctrl.log_message("Error resolving query URI '{0}': {1}".format(uri, str(e)))
+        return None
+
+
 def find_browser_item_by_uri(browser_or_item, uri, max_depth=10, current_depth=0, ctrl=None):
     """Find a browser item by its URI (recursive search across all categories)."""
     try:
+        if current_depth == 0 and hasattr(browser_or_item, "instruments"):
+            item = _find_browser_item_by_query_uri(browser_or_item, uri, ctrl=ctrl)
+            if item is not None:
+                return item
         if hasattr(browser_or_item, "uri") and browser_or_item.uri == uri:
             return browser_or_item
         if current_depth >= max_depth:

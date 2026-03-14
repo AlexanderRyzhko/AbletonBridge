@@ -20,6 +20,11 @@ from . import handlers
 DEFAULT_PORT = 9877
 UDP_REALTIME_PORT = 9882
 HOST = "localhost"
+_MAIN_THREAD_TIMEOUTS = {
+    "load_browser_item": 30.0,
+    "load_sample": 30.0,
+    "load_drum_kit": 30.0,
+}
 
 # -----------------------------------------------------------------------
 # Command dispatch tables
@@ -964,7 +969,8 @@ class AbletonBridge(ControlSurface):
             return {"status": "error", "message": "Ableton scheduling unavailable — try again shortly"}
 
         try:
-            return response_queue.get(timeout=10.0)
+            timeout_s = float(_MAIN_THREAD_TIMEOUTS.get(command_type, 10.0))
+            return response_queue.get(timeout=timeout_s)
         except queue.Empty:
             return {"status": "error", "message": timeout_msg}
 
