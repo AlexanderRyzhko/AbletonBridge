@@ -1,5 +1,6 @@
 """Clip tool handlers for AbletonBridge."""
 import json
+import os
 from typing import List, Dict, Union, Optional
 from mcp.server.fastmcp import Context
 from MCP_Server.tools._base import _tool_handler
@@ -8,6 +9,17 @@ from MCP_Server.validation import _validate_index, _validate_index_allow_negativ
 
 
 def register_tools(mcp):
+    def _get_all_tracks(ableton) -> List[Dict[str, object]]:
+        result = ableton.send_command("get_all_tracks_info")
+        tracks = result.get("tracks", [])
+        return [track for track in tracks if isinstance(track, dict)]
+
+    def _find_track_by_name(tracks: List[Dict[str, object]], track_name: str) -> Optional[Dict[str, object]]:
+        matches = [track for track in tracks if str(track.get("name", "")) == str(track_name)]
+        if len(matches) > 1:
+            raise ValueError(f"Multiple tracks share the exact name {track_name!r}.")
+        return matches[0] if matches else None
+
     @mcp.tool()
     @_tool_handler("creating clip")
     def create_clip(ctx: Context, track_index: int, clip_index: int, length: float = 4.0) -> str:
@@ -33,26 +45,67 @@ def register_tools(mcp):
 
     @mcp.tool()
     @_tool_handler("creating session audio clip")
-    def create_session_audio_clip(ctx: Context, track_index: int, clip_index: int, file_path: str) -> str:
+    def create_session_audio_clip(
+        ctx: Context,
+        clip_index: int,
+        file_path: str,
+        track_index: Optional[int] = None,
+        track_name: Optional[str] = None,
+        create_track_if_missing: bool = False,
+    ) -> str:
         """
         Create a Session View audio clip in the specified audio track and clip slot.
 
         Parameters:
-        - track_index: The index of the target audio track
         - clip_index: The target clip slot index
         - file_path: Absolute path to the source audio file
+        - track_index: Optional target audio track index
+        - track_name: Optional exact track name to resolve instead of track_index
+        - create_track_if_missing: When using track_name, create one new audio track if absent
         """
-        _validate_index(track_index, "track_index")
         _validate_index(clip_index, "clip_index")
         if not isinstance(file_path, str) or not file_path.strip():
             raise ValueError("file_path must be a non-empty string.")
+        if not os.path.isabs(file_path.strip()):
+            raise ValueError("file_path must be an absolute path.")
+        if track_index is None and (track_name is None or not str(track_name).strip()):
+            raise ValueError("Provide either track_index or track_name.")
+        if track_index is not None and track_name is not None and str(track_name).strip():
+            raise ValueError("Provide track_index or track_name, not both.")
         ableton = get_ableton_connection()
+        resolved_track_index: Optional[int] = None
+        resolved_track_name: Optional[str] = None
+        if track_index is not None:
+            _validate_index(track_index, "track_index")
+            resolved_track_index = int(track_index)
+        else:
+            exact_name = str(track_name).strip()
+            tracks = _get_all_tracks(ableton)
+            track = _find_track_by_name(tracks, exact_name)
+            if track is None:
+                if not bool(create_track_if_missing):
+                    raise ValueError(f"No audio track found with exact name {exact_name!r}.")
+                created = ableton.send_command("create_audio_track", {"index": -1})
+                resolved_track_index = int(created.get("index", -1))
+                if resolved_track_index < 0:
+                    raise RuntimeError("create_audio_track did not return a valid index.")
+                ableton.send_command("set_track_name", {"track_index": resolved_track_index, "name": exact_name})
+                tracks = _get_all_tracks(ableton)
+                track = _find_track_by_name(tracks, exact_name)
+                if track is None:
+                    raise RuntimeError(f"Created track {exact_name!r} but could not resolve it afterward.")
+            if not bool(track.get("is_audio")):
+                raise ValueError(f"Track {exact_name!r} exists but is not an audio track.")
+            resolved_track_index = int(track.get("index", -1))
+            resolved_track_name = exact_name
         ableton.send_command("create_session_audio_clip", {
-            "track_index": track_index,
+            "track_index": resolved_track_index,
             "clip_index": clip_index,
             "file_path": file_path.strip(),
         })
-        return f"Created session audio clip at track {track_index}, slot {clip_index} from {file_path.strip()}"
+        if resolved_track_name:
+            return f"Created session audio clip on track {resolved_track_name!r}, slot {clip_index} from {file_path.strip()}"
+        return f"Created session audio clip at track {resolved_track_index}, slot {clip_index} from {file_path.strip()}"
 
     @mcp.tool()
     @_tool_handler("deleting clip")

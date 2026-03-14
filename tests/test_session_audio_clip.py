@@ -95,7 +95,14 @@ def test_create_session_audio_clip_tool_dispatches_command(patch_ableton):
     mcp = _FakeMCP()
     register_tools(mcp)
 
-    result = asyncio.run(mcp.tools["create_session_audio_clip"](None, 2, 3, "/tmp/sample.wav"))
+    result = asyncio.run(
+        mcp.tools["create_session_audio_clip"](
+            None,
+            3,
+            "/tmp/sample.wav",
+            track_index=2,
+        )
+    )
     parsed = json.loads(result)
 
     assert parsed["status"] == "ok"
@@ -104,3 +111,59 @@ def test_create_session_audio_clip_tool_dispatches_command(patch_ableton):
         "clip_index": 3,
         "file_path": "/tmp/sample.wav",
     })
+
+
+def test_create_session_audio_clip_tool_resolves_track_name(patch_ableton):
+    patch_ableton.send_command.side_effect = [
+        {"tracks": [{"index": 4, "name": "named-audio-track", "is_audio": True}]},
+        {"status": "success"},
+    ]
+    mcp = _FakeMCP()
+    register_tools(mcp)
+
+    result = asyncio.run(
+        mcp.tools["create_session_audio_clip"](
+            None,
+            1,
+            "/tmp/sample.wav",
+            track_name="named-audio-track",
+        )
+    )
+    parsed = json.loads(result)
+
+    assert parsed["status"] == "ok"
+    assert patch_ableton.send_command.call_args_list[0].args == ("get_all_tracks_info",)
+    assert patch_ableton.send_command.call_args_list[1].args == (
+        "create_session_audio_clip",
+        {"track_index": 4, "clip_index": 1, "file_path": "/tmp/sample.wav"},
+    )
+
+
+def test_create_session_audio_clip_tool_creates_named_track_if_missing(patch_ableton):
+    patch_ableton.send_command.side_effect = [
+        {"tracks": []},
+        {"index": 7, "name": "7-Audio"},
+        {"name": "named-audio-track"},
+        {"tracks": [{"index": 7, "name": "named-audio-track", "is_audio": True}]},
+        {"status": "success"},
+    ]
+    mcp = _FakeMCP()
+    register_tools(mcp)
+
+    result = asyncio.run(
+        mcp.tools["create_session_audio_clip"](
+            None,
+            2,
+            "/tmp/sample.wav",
+            track_name="named-audio-track",
+            create_track_if_missing=True,
+        )
+    )
+    parsed = json.loads(result)
+
+    assert parsed["status"] == "ok"
+    assert patch_ableton.send_command.call_args_list[1].args == ("create_audio_track", {"index": -1})
+    assert patch_ableton.send_command.call_args_list[2].args == (
+        "set_track_name",
+        {"track_index": 7, "name": "named-audio-track"},
+    )
