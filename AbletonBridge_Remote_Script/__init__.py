@@ -430,6 +430,9 @@ _MODIFYING_HANDLERS = {
 }
 
 _READONLY_HANDLERS = {
+    # --- Diagnostics ---
+    "diagnose_licensing_save_owner": lambda song, p, ctrl: handlers.diagnostics.diagnose_licensing_save_owner(song, ctrl),
+
     # --- Session ---
     "get_session_info": lambda song, p, ctrl: handlers.session.get_session_info(song, ctrl),
     "get_song_transport": lambda song, p, ctrl: handlers.session.get_song_transport(song, ctrl),
