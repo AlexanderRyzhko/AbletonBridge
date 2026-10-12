@@ -10,19 +10,19 @@ def _load_native_save_module():
         from .. import _ableton_native_save
     except ImportError as exc:
         raise RuntimeError(
-            "Native Save As adapter is not installed for this Stable build"
+            "Native document adapter is not installed for this Stable build"
         ) from exc
     return _ableton_native_save
 
 
 def prepare_native_save_as(native_module=None):
-    """Hash and cache native identity from TCP worker, never Live main thread."""
+    """Hash/cache native document-adapter identity from the TCP worker."""
     if native_module is None:
         native_module = _load_native_save_module()
     result = native_module.prepare()
     if not result.get("supported"):
         raise RuntimeError(
-            "Native Save As adapter does not match loaded Stable Live binary"
+            "Native document adapter does not match loaded Stable Live binary"
         )
     return result
 
