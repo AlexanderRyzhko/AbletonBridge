@@ -52,6 +52,23 @@ class _Song:
         self.file_path = file_path
 
 
+class _NativeSave:
+    def __init__(self):
+        self.calls = []
+
+    def save_as(self, path, overwrite=False):
+        self.calls.append((path, overwrite))
+        return {
+            "backend": "live_native_lfile",
+            "path": path,
+            "save_requested": True,
+            "ui_used": False,
+        }
+
+    def prepare(self):
+        return {"supported": True, "ui_used": False}
+
+
 class PersistenceTests(unittest.TestCase):
     def test_save_current_set_uses_existing_bridge_without_ui(self):
         bridge = _Bridge()
@@ -86,6 +103,34 @@ class PersistenceTests(unittest.TestCase):
                 _Song("/tmp/ABKB-3/disposable.als"),
                 objects=[],
             )
+
+    def test_save_set_as_uses_native_adapter_without_ui(self):
+        native = _NativeSave()
+
+        result = persistence.save_set_as(
+            _Song(None),
+            "/tmp/ABKB-3/disposable.als",
+            overwrite=True,
+            native_module=native,
+        )
+
+        self.assertEqual(native.calls, [("/tmp/ABKB-3/disposable.als", True)])
+        self.assertEqual(result["backend"], "live_native_lfile")
+        self.assertFalse(result["ui_used"])
+
+    def test_save_set_as_requires_path_before_import(self):
+        with self.assertRaisesRegex(ValueError, "path is required"):
+            persistence.save_set_as(_Song(None), "")
+
+    def test_prepare_native_save_as_requires_supported_identity(self):
+        native = _NativeSave()
+        self.assertTrue(
+            persistence.prepare_native_save_as(native_module=native)["supported"]
+        )
+
+        native.prepare = lambda: {"supported": False, "ui_used": False}
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            persistence.prepare_native_save_as(native_module=native)
 
 
 if __name__ == "__main__":

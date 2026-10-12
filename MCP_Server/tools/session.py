@@ -1,5 +1,7 @@
 """Session & transport tool handlers for AbletonBridge."""
 import json
+import os
+import time
 from mcp.server.fastmcp import Context
 from MCP_Server.tools._base import _tool_handler, _m4l_result
 from MCP_Server.connections.ableton import get_ableton_connection
@@ -7,6 +9,14 @@ from MCP_Server.connections.m4l import get_m4l_connection
 from MCP_Server.validation import _validate_index, _validate_index_allow_negative, _validate_range
 import MCP_Server.state as state
 from MCP_Server.dashboard.server import get_m4l_status
+
+
+def _save_file_signature(path):
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return (getattr(info, "st_mtime_ns", int(info.st_mtime * 1000000000)), info.st_size)
 
 
 def register_tools(mcp):
@@ -329,6 +339,33 @@ def register_tools(mcp):
         ableton = get_ableton_connection()
         result = ableton.send_command("save_current_set", {})
         return json.dumps(result)
+
+    @mcp.tool()
+    @_tool_handler("saving Live Set to an explicit path")
+    def save_set_as(ctx: Context, path: str, overwrite: bool = False) -> str:
+        """Save current Live Set to an absolute .als path without UI automation.
+
+        Refuses overwrite unless explicitly enabled. Returns only after a new or
+        changed non-empty .als file is visible on disk.
+        """
+        if not os.path.isabs(path):
+            raise ValueError("Save As path must be absolute")
+        path = os.path.abspath(path)
+        before = _save_file_signature(path)
+        ableton = get_ableton_connection()
+        result = ableton.send_command(
+            "save_set_as", {"path": path, "overwrite": overwrite}
+        )
+        for _attempt in range(150):
+            current = _save_file_signature(path)
+            if current is not None and current[1] > 0 and current != before:
+                result["durable_file_verified"] = True
+                result["file_size"] = current[1]
+                return json.dumps(result)
+            time.sleep(0.2)
+        raise RuntimeError(
+            "Live accepted Save As but no changed non-empty .als file appeared within 30s"
+        )
 
     @mcp.tool()
     @_tool_handler("setting session record")
