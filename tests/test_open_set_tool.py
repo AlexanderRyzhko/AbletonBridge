@@ -28,13 +28,14 @@ class _OpeningConnection:
     def send_command(self, command, params):
         self.calls.append((command, params))
         if command == "get_song_file_path":
-            return {"file_path": self.target}
+            return {"file_path": self.target, "document_id": "new-document"}
         return {
             "backend": "live_native_document_request",
             "path": params["path"],
             "open_requested": True,
             "ui_used": False,
             "current_set_action": "saved_named_set",
+            "source_document_id": "old-document",
         }
 
 

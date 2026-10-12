@@ -25,16 +25,35 @@ class _NewSetConnection:
     def send_command(self, command, params):
         self.calls.append((command, params))
         if command == "get_song_file_path":
-            return {"file_path": None}
+            return {"file_path": None, "document_id": "new-document"}
         return {
             "backend": "live_native_document_new",
             "new_requested": True,
             "ui_used": False,
             "current_set_action": "saved_named_set",
+            "source_document_id": "old-document",
         }
 
 
 class NewSetToolTests(unittest.TestCase):
+    def test_untitled_source_is_not_mistaken_for_completed_new_set(self):
+        mcp = _FakeMCP()
+        register_tools(mcp)
+        connection = _NewSetConnection()
+        calls = []
+        def send(command, params):
+            calls.append(command)
+            if command == "new_set":
+                return {"source_document_id": "old-document"}
+            document_id = "old-document" if calls.count(command) == 1 else "new-document"
+            return {"file_path": None, "document_id": document_id}
+        connection.send_command = send
+        with patch("MCP_Server.tools.session.get_ableton_connection", return_value=connection), \
+                patch("MCP_Server.tools.session.time.sleep"):
+            result = json.loads(asyncio.run(mcp.tools["new_set"](None)))
+        self.assertTrue(result["untitled_state_verified"])
+        self.assertEqual(calls.count("get_song_file_path"), 2)
+
     def test_tool_verifies_untitled_state_without_ui(self):
         mcp = _FakeMCP()
         register_tools(mcp)

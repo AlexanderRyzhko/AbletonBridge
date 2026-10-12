@@ -2,7 +2,6 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from .diagnostics import _find_licensing_owners
 
 
 def _load_native_save_module():
@@ -32,25 +31,15 @@ def prepare_native_document_adapter(native_module=None):
     return prepare_native_save_as(native_module=native_module)
 
 
-def _resolve_save_bridge(objects=None):
-    owners = _find_licensing_owners(objects)
-    if len(owners) != 1:
-        raise RuntimeError(
-            "Expected one Live-owned PythonLicensing instance; found {0}".format(
-                len(owners)
-            )
-        )
-
-    bridge = getattr(owners[0], "licensing_bridge", None)
-    save = getattr(bridge, "save_current_set", None)
-    if not callable(save):
-        raise RuntimeError(
-            "Live-owned PythonLicensing bridge has no callable save_current_set"
-        )
-    return bridge
+def commit_document_request():
+    _load_native_save_module().commit_document()
 
 
-def save_current_set(song, ctrl=None, objects=None):
+def cancel_document_request():
+    _load_native_save_module().cancel_document()
+
+
+def save_current_set(song, ctrl=None, native_module=None):
     """Save a named Set without focus changes, keystrokes, or UI fallback."""
     file_path = str(getattr(song, "file_path", "") or "")
     if not file_path:
@@ -58,16 +47,10 @@ def save_current_set(song, ctrl=None, objects=None):
             "Current Live Set is Untitled; refusing Save because Live would open UI"
         )
 
-    bridge = _resolve_save_bridge(objects)
-    bridge.save_current_set()
-    if ctrl:
-        ctrl.log_message("Saved current Live Set through Live-owned licensing bridge")
-    return {
-        "backend": "live_owned_python_licensing",
-        "file_path": file_path,
-        "save_requested": True,
-        "ui_used": False,
-    }
+    result = save_set_as(song, file_path, overwrite=True, ctrl=ctrl,
+                         native_module=native_module)
+    result["file_path"] = file_path
+    return result
 
 
 def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None):
@@ -92,13 +75,12 @@ def _protect_current_set(
     overwrite_save_as,
     ctrl,
     native_module,
-    objects,
 ):
     current_path = str(getattr(song, "file_path", "") or "")
     if discard_current:
         return "explicit_discard"
     if current_path:
-        save_current_set(song, ctrl=ctrl, objects=objects)
+        save_current_set(song, ctrl=ctrl, native_module=native_module)
         return "saved_named_set"
     if save_as_path:
         save_set_as(
@@ -123,7 +105,6 @@ def open_set(
     overwrite_save_as=False,
     ctrl=None,
     native_module=None,
-    objects=None,
 ):
     """Open an explicit .als path without UI and with fail-closed data policy."""
     path = str(path or "")
@@ -139,11 +120,11 @@ def open_set(
         overwrite_save_as,
         ctrl,
         native_module,
-        objects,
     )
 
     result = native_module.open_set(path=path, replace_confirmed=True)
     result["current_set_action"] = current_action
+    result["source_document_id"] = ctrl.document_id if ctrl else None
     if ctrl:
         ctrl.log_message("Requested non-UI Open Set through native document adapter")
     return result
@@ -156,7 +137,6 @@ def new_set(
     overwrite_save_as=False,
     ctrl=None,
     native_module=None,
-    objects=None,
 ):
     """Create a new Set without UI and with fail-closed data policy."""
     if native_module is None:
@@ -168,11 +148,10 @@ def new_set(
         overwrite_save_as,
         ctrl,
         native_module,
-        objects,
     )
     result = native_module.new_set(replace_confirmed=True)
     result["current_set_action"] = current_action
-    result["active_file_path"] = str(getattr(song, "file_path", "") or "") or None
+    result["source_document_id"] = ctrl.document_id if ctrl else None
     if ctrl:
         ctrl.log_message("Requested non-UI New Set through native document adapter")
     return result

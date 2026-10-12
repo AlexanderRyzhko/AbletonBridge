@@ -27,26 +27,6 @@ for module_name in ("diagnostics", "persistence"):
 persistence = sys.modules[PACKAGE + ".persistence"]
 
 
-class _Bridge:
-    __module__ = "Live.Licensing"
-
-    def __init__(self):
-        self.calls = 0
-
-    def save_current_set(self):
-        self.calls += 1
-
-
-class _Owner:
-    __module__ = "abl.live.licensing"
-
-    def __init__(self, bridge):
-        self.licensing_bridge = bridge
-
-
-_Owner.__name__ = "PythonLicensing"
-
-
 class _Song:
     def __init__(self, file_path):
         self.file_path = file_path
@@ -87,39 +67,40 @@ class _NativeSave:
 
 
 class PersistenceTests(unittest.TestCase):
-    def test_save_current_set_uses_existing_bridge_without_ui(self):
-        bridge = _Bridge()
+    def test_save_current_set_uses_explicit_path_without_licensing_menu(self):
+        native = _NativeSave()
 
         result = persistence.save_current_set(
             _Song("/tmp/ABKB-3/disposable.als"),
-            objects=[_Owner(bridge)],
+            native_module=native,
         )
 
-        self.assertEqual(bridge.calls, 1)
+        self.assertEqual(native.calls, [("/tmp/ABKB-3/disposable.als", True)])
         self.assertEqual(
             result,
             {
-                "backend": "live_owned_python_licensing",
+                "backend": "live_native_lfile",
+                "path": "/tmp/ABKB-3/disposable.als",
                 "file_path": "/tmp/ABKB-3/disposable.als",
                 "save_requested": True,
                 "ui_used": False,
             },
         )
 
-    def test_save_current_set_refuses_untitled_before_resolving_bridge(self):
-        bridge = _Bridge()
-
+    def test_save_current_set_refuses_untitled_before_native_call(self):
+        native = _NativeSave()
         with self.assertRaisesRegex(ValueError, "Untitled"):
-            persistence.save_current_set(_Song(None), objects=[_Owner(bridge)])
+            persistence.save_current_set(_Song(None), native_module=native)
+        self.assertEqual(native.calls, [])
 
-        self.assertEqual(bridge.calls, 0)
-
-    def test_save_current_set_requires_exactly_one_live_owned_owner(self):
-        with self.assertRaisesRegex(RuntimeError, "found 0"):
-            persistence.save_current_set(
-                _Song("/tmp/ABKB-3/disposable.als"),
-                objects=[],
-            )
+    def test_save_current_set_propagates_native_failure(self):
+        native = _NativeSave()
+        def fail(*args, **kwargs):
+            raise RuntimeError("save failed")
+        native.save_as = fail
+        with self.assertRaisesRegex(RuntimeError, "save failed"):
+            persistence.save_current_set(_Song("/tmp/ABKB-3/disposable.als"),
+                                         native_module=native)
 
     def test_save_set_as_uses_native_adapter_without_ui(self):
         native = _NativeSave()
@@ -150,19 +131,17 @@ class PersistenceTests(unittest.TestCase):
             persistence.prepare_native_save_as(native_module=native)
 
     def test_open_set_saves_named_current_set_before_native_request(self):
-        bridge = _Bridge()
         native = _NativeSave()
 
         result = persistence.open_set(
             _Song("/tmp/ABKB-3/current.als"),
             "/tmp/ABKB-3/next.als",
             native_module=native,
-            objects=[_Owner(bridge)],
         )
 
-        self.assertEqual(bridge.calls, 1)
         self.assertEqual(
-            native.calls, [("open_set", "/tmp/ABKB-3/next.als", True)]
+            native.calls, [("/tmp/ABKB-3/current.als", True),
+                           ("open_set", "/tmp/ABKB-3/next.als", True)]
         )
         self.assertEqual(result["current_set_action"], "saved_named_set")
         self.assertFalse(result["ui_used"])
@@ -195,18 +174,15 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(result["current_set_action"], "explicit_discard")
 
     def test_new_set_saves_named_current_set_before_native_request(self):
-        bridge = _Bridge()
         native = _NativeSave()
         song = _Song("/tmp/ABKB-3/current.als")
 
         result = persistence.new_set(
             song,
             native_module=native,
-            objects=[_Owner(bridge)],
         )
 
-        self.assertEqual(bridge.calls, 1)
-        self.assertEqual(native.calls, [("new_set", True)])
+        self.assertEqual(native.calls, [("/tmp/ABKB-3/current.als", True), ("new_set", True)])
         self.assertEqual(result["current_set_action"], "saved_named_set")
         self.assertFalse(result["ui_used"])
 

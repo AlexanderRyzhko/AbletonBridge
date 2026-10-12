@@ -7,6 +7,7 @@ import json
 import threading
 import time
 import traceback
+import os
 
 # Change queue import for Python 2
 try:
@@ -606,6 +607,7 @@ class AbletonBridge(ControlSurface):
         """Initialize the control surface"""
         ControlSurface.__init__(self, c_instance)
         self.log_message("AbletonBridge Remote Script initializing...")
+        self.document_id = os.urandom(16).hex()
 
         # Socket server for communication
         self.server = None
@@ -870,11 +872,19 @@ class AbletonBridge(ControlSurface):
                         response = self._process_command(command)
 
                         response_str = json.dumps(response) + '\n'
+                        document_request = (
+                            command.get("type") in ("open_set", "new_set")
+                            and response.get("status") == "success"
+                        )
                         try:
                             client.sendall(response_str.encode('utf-8'))
                         except (OSError, socket.error):
+                            if document_request:
+                                handlers.persistence.cancel_document_request()
                             self.log_message("Client disconnected during response send")
                             break
+                        if document_request:
+                            handlers.persistence.commit_document_request()
 
                     # 1MB safety limit
                     if len(buffer) > 1048576:
@@ -948,7 +958,7 @@ class AbletonBridge(ControlSurface):
         response = {"status": "success", "result": {}}
 
         try:
-            if command_type in ("save_set_as", "open_set", "new_set"):
+            if command_type in ("save_current_set", "save_set_as", "open_set", "new_set"):
                 handlers.persistence.prepare_native_document_adapter()
             if command_type in _MODIFYING_HANDLERS:
                 response = self._dispatch_on_main_thread(command_type, params)

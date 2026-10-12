@@ -405,10 +405,17 @@ def register_tools(mcp):
                 "overwrite_save_as": overwrite_save_as,
             },
         )
-        for _attempt in range(150):
-            current = ableton.send_command("get_song_file_path", {})
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                current = ableton.send_command("get_song_file_path", {})
+            except Exception:
+                time.sleep(0.2)
+                continue
             current_path = current.get("file_path")
-            if current_path and os.path.abspath(current_path) == path:
+            changed = (current.get("document_id") and
+                       current["document_id"] != result.get("source_document_id"))
+            if changed and current_path and os.path.realpath(current_path) == os.path.realpath(path):
                 result["active_path_verified"] = True
                 return json.dumps(result)
             time.sleep(0.2)
@@ -442,11 +449,20 @@ def register_tools(mcp):
                 "overwrite_save_as": overwrite_save_as,
             },
         )
-        current = ableton.send_command("get_song_file_path", {})
-        if current.get("file_path") is not None:
-            raise RuntimeError("Live accepted New Set but active Set is still named")
-        result["untitled_state_verified"] = True
-        return json.dumps(result)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                current = ableton.send_command("get_song_file_path", {})
+            except Exception:
+                time.sleep(0.2)
+                continue
+            changed = (current.get("document_id") and
+                       current["document_id"] != result.get("source_document_id"))
+            if changed and current.get("file_path") is None:
+                result["untitled_state_verified"] = True
+                return json.dumps(result)
+            time.sleep(0.2)
+        raise RuntimeError("Live accepted New Set but Untitled state was not verified")
 
     @mcp.tool()
     @_tool_handler("setting session record")

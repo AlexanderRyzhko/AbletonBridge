@@ -55,6 +55,7 @@ TIER_1_COMMANDS: frozenset = frozenset([
 
 # Tier 2: Heavy delay (100ms pre + 100ms post) -- structural/loading changes
 TIER_2_COMMANDS: frozenset = frozenset([
+    "save_current_set", "save_set_as", "open_set", "new_set",
     "create_midi_track", "create_audio_track", "create_clip",
     "create_session_audio_clip",
     "delete_clip", "delete_track", "duplicate_track",

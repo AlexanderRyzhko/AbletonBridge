@@ -1140,7 +1140,8 @@ def capture_and_insert_scene(song, ctrl=None):
 def get_song_file_path(song, ctrl=None):
     """Get the file path of the current Live Set."""
     try:
-        return {"file_path": str(song.file_path) if song.file_path else None}
+        return {"file_path": str(song.file_path) if song.file_path else None,
+                "document_id": ctrl.document_id if ctrl else None}
     except Exception as e:
         if ctrl:
             ctrl.log_message("Error getting song file path: " + str(e))
