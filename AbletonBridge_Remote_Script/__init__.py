@@ -41,6 +41,7 @@ _MAIN_THREAD_TIMEOUTS = {
 
 _MODIFYING_HANDLERS = {
     # --- Session ---
+    "save_current_set": lambda song, p, ctrl: handlers.persistence.save_current_set(song, ctrl),
     "set_tempo": lambda song, p, ctrl: handlers.session.set_tempo(song, p.get("tempo", 120.0), ctrl),
     "start_playback": lambda song, p, ctrl: handlers.session.start_playback(song, ctrl),
     "stop_playback": lambda song, p, ctrl: handlers.session.stop_playback(song, ctrl),

@@ -320,6 +320,17 @@ def register_tools(mcp):
         return json.dumps(result)
 
     @mcp.tool()
+    @_tool_handler("saving current Live Set")
+    def save_current_set(ctx: Context) -> str:
+        """Save the current named Live Set without UI automation.
+
+        Refuses Untitled Sets instead of opening a Save As dialog.
+        """
+        ableton = get_ableton_connection()
+        result = ableton.send_command("save_current_set", {})
+        return json.dumps(result)
+
+    @mcp.tool()
     @_tool_handler("setting session record")
     def set_session_record(ctx: Context, enabled: bool) -> str:
         """Enable or disable session recording.

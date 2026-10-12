@@ -6,20 +6,29 @@ import gc
 import sys
 
 
-def _describe_licensing_objects(objects=None):
-    """Describe existing licensing owners without constructing or invoking them."""
+def _find_licensing_owners(objects=None):
+    """Return Live-owned PythonLicensing instances without constructing anything."""
     if objects is None:
         objects = gc.get_objects()
 
     owners = []
-    bridge_types = set()
     for obj in objects:
         obj_type = type(obj)
         if (
-            getattr(obj_type, "__module__", "") != "abl.live.licensing"
-            or getattr(obj_type, "__name__", "") != "PythonLicensing"
+            getattr(obj_type, "__module__", "") == "abl.live.licensing"
+            and getattr(obj_type, "__name__", "") == "PythonLicensing"
         ):
-            continue
+            owners.append(obj)
+    return owners
+
+
+def _describe_licensing_objects(objects=None):
+    """Describe existing licensing owners without constructing or invoking them."""
+    licensing_owners = _find_licensing_owners(objects)
+
+    owners = []
+    bridge_types = set()
+    for obj in licensing_owners:
         bridge = getattr(obj, "licensing_bridge", None)
         bridge_type = type(bridge)
         bridge_type_name = "{0}.{1}".format(

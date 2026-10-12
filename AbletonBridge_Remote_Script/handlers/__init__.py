@@ -13,6 +13,7 @@ from . import audio
 from . import midi
 from . import automation
 from . import diagnostics
+from . import persistence
 
 __all__ = [
     "session",
@@ -27,4 +28,5 @@ __all__ = [
     "midi",
     "automation",
     "diagnostics",
+    "persistence",
 ]
