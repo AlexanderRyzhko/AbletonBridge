@@ -27,6 +27,11 @@ def prepare_native_save_as(native_module=None):
     return result
 
 
+def prepare_native_document_adapter(native_module=None):
+    """Prepare the shared Save As/Open Set adapter on the TCP worker."""
+    return prepare_native_save_as(native_module=native_module)
+
+
 def _resolve_save_bridge(objects=None):
     owners = _find_licensing_owners(objects)
     if len(owners) != 1:
@@ -77,4 +82,49 @@ def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None):
     result = native_module.save_as(path=path, overwrite=bool(overwrite))
     if ctrl:
         ctrl.log_message("Requested non-UI Save As through native LFile adapter")
+    return result
+
+
+def open_set(
+    song,
+    path,
+    discard_current=False,
+    save_as_path="",
+    overwrite_save_as=False,
+    ctrl=None,
+    native_module=None,
+    objects=None,
+):
+    """Open an explicit .als path without UI and with fail-closed data policy."""
+    path = str(path or "")
+    if not path:
+        raise ValueError("Open Set path is required")
+    if native_module is None:
+        native_module = _load_native_save_module()
+
+    current_path = str(getattr(song, "file_path", "") or "")
+    if discard_current:
+        current_action = "explicit_discard"
+    elif current_path:
+        save_current_set(song, ctrl=ctrl, objects=objects)
+        current_action = "saved_named_set"
+    elif save_as_path:
+        save_set_as(
+            song,
+            save_as_path,
+            overwrite=overwrite_save_as,
+            ctrl=ctrl,
+            native_module=native_module,
+        )
+        current_action = "saved_untitled_set_as"
+    else:
+        raise ValueError(
+            "Current Live Set is Untitled; provide save_as_path or explicitly "
+            "set discard_current=true"
+        )
+
+    result = native_module.open_set(path=path, replace_confirmed=True)
+    result["current_set_action"] = current_action
+    if ctrl:
+        ctrl.log_message("Requested non-UI Open Set through native document adapter")
     return result

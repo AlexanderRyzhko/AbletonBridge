@@ -44,6 +44,9 @@ _MODIFYING_HANDLERS = {
     "save_current_set": lambda song, p, ctrl: handlers.persistence.save_current_set(song, ctrl),
     "save_set_as": lambda song, p, ctrl: handlers.persistence.save_set_as(
         song, p.get("path", ""), p.get("overwrite", False), ctrl),
+    "open_set": lambda song, p, ctrl: handlers.persistence.open_set(
+        song, p.get("path", ""), p.get("discard_current", False),
+        p.get("save_as_path", ""), p.get("overwrite_save_as", False), ctrl),
     "set_tempo": lambda song, p, ctrl: handlers.session.set_tempo(song, p.get("tempo", 120.0), ctrl),
     "start_playback": lambda song, p, ctrl: handlers.session.start_playback(song, ctrl),
     "stop_playback": lambda song, p, ctrl: handlers.session.stop_playback(song, ctrl),
@@ -942,8 +945,8 @@ class AbletonBridge(ControlSurface):
         response = {"status": "success", "result": {}}
 
         try:
-            if command_type == "save_set_as":
-                handlers.persistence.prepare_native_save_as()
+            if command_type in ("save_set_as", "open_set"):
+                handlers.persistence.prepare_native_document_adapter()
             if command_type in _MODIFYING_HANDLERS:
                 response = self._dispatch_on_main_thread(command_type, params)
             elif command_type in _READONLY_HANDLERS:

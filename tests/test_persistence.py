@@ -65,6 +65,15 @@ class _NativeSave:
             "ui_used": False,
         }
 
+    def open_set(self, path, replace_confirmed=False):
+        self.calls.append(("open_set", path, replace_confirmed))
+        return {
+            "backend": "live_native_document_request",
+            "path": path,
+            "open_requested": True,
+            "ui_used": False,
+        }
+
     def prepare(self):
         return {"supported": True, "ui_used": False}
 
@@ -131,6 +140,51 @@ class PersistenceTests(unittest.TestCase):
         native.prepare = lambda: {"supported": False, "ui_used": False}
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             persistence.prepare_native_save_as(native_module=native)
+
+    def test_open_set_saves_named_current_set_before_native_request(self):
+        bridge = _Bridge()
+        native = _NativeSave()
+
+        result = persistence.open_set(
+            _Song("/tmp/ABKB-3/current.als"),
+            "/tmp/ABKB-3/next.als",
+            native_module=native,
+            objects=[_Owner(bridge)],
+        )
+
+        self.assertEqual(bridge.calls, 1)
+        self.assertEqual(
+            native.calls, [("open_set", "/tmp/ABKB-3/next.als", True)]
+        )
+        self.assertEqual(result["current_set_action"], "saved_named_set")
+        self.assertFalse(result["ui_used"])
+
+    def test_open_set_refuses_untitled_without_explicit_policy(self):
+        native = _NativeSave()
+
+        with self.assertRaisesRegex(ValueError, "Untitled"):
+            persistence.open_set(
+                _Song(None),
+                "/tmp/ABKB-3/next.als",
+                native_module=native,
+            )
+
+        self.assertEqual(native.calls, [])
+
+    def test_open_set_allows_explicit_discard_without_save_or_ui(self):
+        native = _NativeSave()
+
+        result = persistence.open_set(
+            _Song(None),
+            "/tmp/ABKB-3/next.als",
+            discard_current=True,
+            native_module=native,
+        )
+
+        self.assertEqual(
+            native.calls, [("open_set", "/tmp/ABKB-3/next.als", True)]
+        )
+        self.assertEqual(result["current_set_action"], "explicit_discard")
 
 
 if __name__ == "__main__":

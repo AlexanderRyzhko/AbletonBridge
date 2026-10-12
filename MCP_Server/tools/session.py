@@ -368,6 +368,55 @@ def register_tools(mcp):
         )
 
     @mcp.tool()
+    @_tool_handler("opening Live Set from an explicit path")
+    def open_set(
+        ctx: Context,
+        path: str,
+        discard_current: bool = False,
+        save_as_path: str = "",
+        overwrite_save_as: bool = False,
+    ) -> str:
+        """Open an absolute .als path without UI automation.
+
+        Named current Sets are saved first. Untitled Sets are refused unless
+        save_as_path is supplied or discard_current is explicitly true.
+        """
+        if not os.path.isabs(path):
+            raise ValueError("Open Set path must be absolute")
+        path = os.path.abspath(path)
+        if not path.lower().endswith(".als"):
+            raise ValueError("Open Set path must end in .als")
+        if os.path.islink(path):
+            raise ValueError("Open Set source cannot be a symbolic link")
+        if not os.path.isfile(path):
+            raise ValueError("Open Set source must be a regular file")
+        if save_as_path:
+            if not os.path.isabs(save_as_path):
+                raise ValueError("Open Set save_as_path must be absolute")
+            save_as_path = os.path.abspath(save_as_path)
+
+        ableton = get_ableton_connection()
+        result = ableton.send_command(
+            "open_set",
+            {
+                "path": path,
+                "discard_current": discard_current,
+                "save_as_path": save_as_path,
+                "overwrite_save_as": overwrite_save_as,
+            },
+        )
+        for _attempt in range(150):
+            current = ableton.send_command("get_song_file_path", {})
+            current_path = current.get("file_path")
+            if current_path and os.path.abspath(current_path) == path:
+                result["active_path_verified"] = True
+                return json.dumps(result)
+            time.sleep(0.2)
+        raise RuntimeError(
+            "Live accepted Open Set but active path did not match within 30s"
+        )
+
+    @mcp.tool()
     @_tool_handler("setting session record")
     def set_session_record(ctx: Context, enabled: bool) -> str:
         """Enable or disable session recording.
