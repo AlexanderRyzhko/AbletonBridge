@@ -74,6 +74,14 @@ class _NativeSave:
             "ui_used": False,
         }
 
+    def new_set(self, replace_confirmed=False):
+        self.calls.append(("new_set", replace_confirmed))
+        return {
+            "backend": "live_native_document_new",
+            "new_requested": True,
+            "ui_used": False,
+        }
+
     def prepare(self):
         return {"supported": True, "ui_used": False}
 
@@ -185,6 +193,30 @@ class PersistenceTests(unittest.TestCase):
             native.calls, [("open_set", "/tmp/ABKB-3/next.als", True)]
         )
         self.assertEqual(result["current_set_action"], "explicit_discard")
+
+    def test_new_set_saves_named_current_set_before_native_request(self):
+        bridge = _Bridge()
+        native = _NativeSave()
+        song = _Song("/tmp/ABKB-3/current.als")
+
+        result = persistence.new_set(
+            song,
+            native_module=native,
+            objects=[_Owner(bridge)],
+        )
+
+        self.assertEqual(bridge.calls, 1)
+        self.assertEqual(native.calls, [("new_set", True)])
+        self.assertEqual(result["current_set_action"], "saved_named_set")
+        self.assertFalse(result["ui_used"])
+
+    def test_new_set_refuses_untitled_without_explicit_policy(self):
+        native = _NativeSave()
+
+        with self.assertRaisesRegex(ValueError, "Untitled"):
+            persistence.new_set(_Song(None), native_module=native)
+
+        self.assertEqual(native.calls, [])
 
 
 if __name__ == "__main__":

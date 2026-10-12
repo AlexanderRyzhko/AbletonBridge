@@ -85,6 +85,36 @@ def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None):
     return result
 
 
+def _protect_current_set(
+    song,
+    discard_current,
+    save_as_path,
+    overwrite_save_as,
+    ctrl,
+    native_module,
+    objects,
+):
+    current_path = str(getattr(song, "file_path", "") or "")
+    if discard_current:
+        return "explicit_discard"
+    if current_path:
+        save_current_set(song, ctrl=ctrl, objects=objects)
+        return "saved_named_set"
+    if save_as_path:
+        save_set_as(
+            song,
+            save_as_path,
+            overwrite=overwrite_save_as,
+            ctrl=ctrl,
+            native_module=native_module,
+        )
+        return "saved_untitled_set_as"
+    raise ValueError(
+        "Current Live Set is Untitled; provide save_as_path or explicitly "
+        "set discard_current=true"
+    )
+
+
 def open_set(
     song,
     path,
@@ -102,29 +132,47 @@ def open_set(
     if native_module is None:
         native_module = _load_native_save_module()
 
-    current_path = str(getattr(song, "file_path", "") or "")
-    if discard_current:
-        current_action = "explicit_discard"
-    elif current_path:
-        save_current_set(song, ctrl=ctrl, objects=objects)
-        current_action = "saved_named_set"
-    elif save_as_path:
-        save_set_as(
-            song,
-            save_as_path,
-            overwrite=overwrite_save_as,
-            ctrl=ctrl,
-            native_module=native_module,
-        )
-        current_action = "saved_untitled_set_as"
-    else:
-        raise ValueError(
-            "Current Live Set is Untitled; provide save_as_path or explicitly "
-            "set discard_current=true"
-        )
+    current_action = _protect_current_set(
+        song,
+        discard_current,
+        save_as_path,
+        overwrite_save_as,
+        ctrl,
+        native_module,
+        objects,
+    )
 
     result = native_module.open_set(path=path, replace_confirmed=True)
     result["current_set_action"] = current_action
     if ctrl:
         ctrl.log_message("Requested non-UI Open Set through native document adapter")
+    return result
+
+
+def new_set(
+    song,
+    discard_current=False,
+    save_as_path="",
+    overwrite_save_as=False,
+    ctrl=None,
+    native_module=None,
+    objects=None,
+):
+    """Create a new Set without UI and with fail-closed data policy."""
+    if native_module is None:
+        native_module = _load_native_save_module()
+    current_action = _protect_current_set(
+        song,
+        discard_current,
+        save_as_path,
+        overwrite_save_as,
+        ctrl,
+        native_module,
+        objects,
+    )
+    result = native_module.new_set(replace_confirmed=True)
+    result["current_set_action"] = current_action
+    result["active_file_path"] = str(getattr(song, "file_path", "") or "") or None
+    if ctrl:
+        ctrl.log_message("Requested non-UI New Set through native document adapter")
     return result

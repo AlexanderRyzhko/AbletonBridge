@@ -417,6 +417,38 @@ def register_tools(mcp):
         )
 
     @mcp.tool()
+    @_tool_handler("creating a new Live Set")
+    def new_set(
+        ctx: Context,
+        discard_current: bool = False,
+        save_as_path: str = "",
+        overwrite_save_as: bool = False,
+    ) -> str:
+        """Create a new Set without UI automation.
+
+        Named current Sets are saved first. Untitled Sets are refused unless
+        save_as_path is supplied or discard_current is explicitly true.
+        """
+        if save_as_path:
+            if not os.path.isabs(save_as_path):
+                raise ValueError("New Set save_as_path must be absolute")
+            save_as_path = os.path.abspath(save_as_path)
+        ableton = get_ableton_connection()
+        result = ableton.send_command(
+            "new_set",
+            {
+                "discard_current": discard_current,
+                "save_as_path": save_as_path,
+                "overwrite_save_as": overwrite_save_as,
+            },
+        )
+        current = ableton.send_command("get_song_file_path", {})
+        if current.get("file_path") is not None:
+            raise RuntimeError("Live accepted New Set but active Set is still named")
+        result["untitled_state_verified"] = True
+        return json.dumps(result)
+
+    @mcp.tool()
     @_tool_handler("setting session record")
     def set_session_record(ctx: Context, enabled: bool) -> str:
         """Enable or disable session recording.
