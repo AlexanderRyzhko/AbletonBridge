@@ -16,7 +16,7 @@ logger = logging.getLogger("AbletonBridge")
 # Phase 4.5: Non-idempotent commands should NOT be retried automatically
 # because a retry could create duplicate tracks, clips, etc.
 NON_IDEMPOTENT_COMMANDS = frozenset([
-    "save_set_as", "save_current_set", "open_set", "new_set",
+    "save_set_as", "save_set_copy", "save_current_set", "open_set", "new_set",
     "create_midi_track", "create_audio_track", "create_clip",
     "create_session_audio_clip",
     "create_return_track", "create_scene", "delete_track",

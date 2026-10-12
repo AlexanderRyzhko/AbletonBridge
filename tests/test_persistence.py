@@ -65,8 +65,72 @@ class _NativeSave:
     def prepare(self):
         return {"supported": True, "ui_used": False}
 
+    def save_copy(self, path, overwrite=False):
+        self.calls.append(("save_copy", path, overwrite))
+        return {"path": path, "copy_requested": True, "experimental": True}
+
 
 class PersistenceTests(unittest.TestCase):
+    def test_dirty_document_refusal_is_client_safe_validation_error(self):
+        message = (
+            "Current Set has unsaved changes; native discard is not implemented; "
+            "refusing document exchange because Live would open a dialog"
+        )
+        def denied(**params):
+            raise PermissionError(message)
+        native = _NativeSave()
+        native.open_set = denied
+        native.new_set = denied
+        for operation, params in (
+            (persistence.open_set, {"path": "/tmp/next.als"}),
+            (persistence.new_set, {}),
+        ):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(ValueError, "native discard is not implemented"):
+                    operation(_Song("/tmp/source.als"), discard_current=True,
+                              native_module=native, **params)
+
+    def test_other_permission_errors_remain_private(self):
+        def denied(**params):
+            raise PermissionError("Private runtime or filesystem details")
+        with self.assertRaises(PermissionError):
+            persistence._request_document_exchange(denied)
+
+    def test_save_copy_requires_explicit_experimental_flag(self):
+        native = _NativeSave()
+        with self.assertRaisesRegex(ValueError, "experimental=true"):
+            persistence.save_set_copy(_Song(None), "/tmp/copy.als", native_module=native)
+        self.assertEqual(native.calls, [])
+
+    def test_save_copy_retains_active_path(self):
+        native = _NativeSave()
+        result = persistence.save_set_copy(
+            _Song("/tmp/original.als"), "/tmp/copy.als",
+            experimental=True, native_module=native,
+        )
+        self.assertEqual(native.calls, [("save_copy", "/tmp/copy.als", False)])
+        self.assertTrue(result["active_path_unchanged"])
+        self.assertEqual(result["active_file_path"], "/tmp/original.als")
+
+    def test_save_copy_reports_unexpected_path_change(self):
+        native = _NativeSave()
+        song = _Song("/tmp/original.als")
+        original_copy = native.save_copy
+        def changed(path, overwrite=False):
+            song.file_path = path
+            return original_copy(path, overwrite)
+        native.save_copy = changed
+        with self.assertRaisesRegex(RuntimeError, "changed active"):
+            persistence.save_set_copy(song, "/tmp/copy.als",
+                                      experimental=True, native_module=native)
+
+    def test_save_copy_rejects_empty_path_before_native_call(self):
+        native = _NativeSave()
+        with self.assertRaisesRegex(ValueError, "path is required"):
+            persistence.save_set_copy(_Song(None), "", experimental=True,
+                                      native_module=native)
+        self.assertEqual(native.calls, [])
+
     def test_save_current_set_uses_explicit_path_without_licensing_menu(self):
         native = _NativeSave()
 

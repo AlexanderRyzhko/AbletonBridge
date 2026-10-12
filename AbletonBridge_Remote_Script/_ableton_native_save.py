@@ -44,9 +44,10 @@ for _name in ("ab_prepare", "ab_main_thread", "ab_error_type", "ab_commit_docume
 _lib.ab_cancel_document.argtypes = []
 _lib.ab_cancel_document.restype = None
 _lib.ab_save_as.argtypes = [_CharPointer, _Int]
+_lib.ab_save_copy.argtypes = [_CharPointer, _Int]
 _lib.ab_open_set.argtypes = [_CharPointer, _Int]
 _lib.ab_new_set.argtypes = [_Int]
-for _name in ("ab_save_as", "ab_open_set", "ab_new_set"):
+for _name in ("ab_save_as", "ab_save_copy", "ab_open_set", "ab_new_set"):
     getattr(_lib, _name).restype = _Int
 
 
@@ -82,6 +83,18 @@ def _check(accepted):
 def save_as(path, overwrite=False):
     _check(_lib.ab_save_as(_path_bytes(path), bool(overwrite)))
     return {"backend": "live_native_lfile", "path": path, "save_requested": True, "ui_used": False}
+
+
+def save_copy(path, overwrite=False):
+    _check(_lib.ab_save_copy(_path_bytes(path), bool(overwrite)))
+    return {
+        "backend": "live_native_document_serializer",
+        "path": path,
+        "copy_requested": True,
+        "ui_automation_used": False,
+        "desktop_noninterference_verified": False,
+        "experimental": True,
+    }
 
 
 def open_set(path, replace_confirmed=False):

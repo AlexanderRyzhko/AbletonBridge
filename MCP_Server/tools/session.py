@@ -368,6 +368,51 @@ def register_tools(mcp):
         )
 
     @mcp.tool()
+    @_tool_handler("saving an experimental Live Set copy")
+    def save_set_copy(
+        ctx: Context, path: str, overwrite: bool = False, experimental: bool = False
+    ) -> str:
+        """Serialize a Set copy without changing active path; not full Save As.
+
+        Requires experimental=true. Checks changed file, gzip/XML structure, and
+        active-path readback. XML inspection is capped at 32 MiB decompressed.
+        Desktop noninterference remains limited to recorded runtime observations.
+        """
+        import gzip
+        import xml.etree.ElementTree as ET
+
+        if not experimental:
+            raise ValueError("Save Copy requires explicit experimental=true")
+        if not os.path.isabs(path) or not path.lower().endswith(".als"):
+            raise ValueError("Save Copy requires an absolute .als path")
+        path = os.path.abspath(path)
+        before = _save_file_signature(path)
+        ableton = get_ableton_connection()
+        result = ableton.send_command(
+            "save_set_copy",
+            {"path": path, "overwrite": overwrite, "experimental": True},
+        )
+        if result.get("active_path_unchanged") is not True:
+            raise RuntimeError("Save Copy did not verify unchanged active path")
+        for _attempt in range(150):
+            current = _save_file_signature(path)
+            if current is not None and current[1] > 0 and current != before:
+                limit = 32 * 1024 * 1024
+                with gzip.open(path, "rb") as stream:
+                    payload = stream.read(limit + 1)
+                if len(payload) > limit:
+                    raise RuntimeError("Save Copy exceeds 32 MiB XML inspection limit")
+                root = ET.fromstring(payload)
+                if root.tag != "Ableton" or root.find("LiveSet") is None:
+                    raise RuntimeError("Save Copy output lacks Ableton/LiveSet XML structure")
+                result["copy_file_verified"] = True
+                result["gzip_xml_verified"] = True
+                result["file_size"] = current[1]
+                return json.dumps(result)
+            time.sleep(0.2)
+        raise RuntimeError("Save Copy accepted but no changed file appeared within 30s")
+
+    @mcp.tool()
     @_tool_handler("opening Live Set from an explicit path")
     def open_set(
         ctx: Context,

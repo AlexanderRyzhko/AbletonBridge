@@ -39,6 +39,20 @@ def cancel_document_request():
     _load_native_save_module().cancel_document()
 
 
+def _request_document_exchange(operation, **params):
+    """Expose only the fixed, non-sensitive native dirty-state refusal."""
+    try:
+        return operation(**params)
+    except PermissionError as exc:
+        expected = (
+            "Current Set has unsaved changes; native discard is not implemented; "
+            "refusing document exchange because Live would open a dialog"
+        )
+        if str(exc) == expected:
+            raise ValueError(expected) from exc
+        raise
+
+
 def save_current_set(song, ctrl=None, native_module=None):
     """Save a named Set without focus changes, keystrokes, or UI fallback."""
     file_path = str(getattr(song, "file_path", "") or "")
@@ -65,6 +79,25 @@ def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None):
     result = native_module.save_as(path=path, overwrite=bool(overwrite))
     if ctrl:
         ctrl.log_message("Requested non-UI Save As through native LFile adapter")
+    return result
+
+
+def save_set_copy(song, path, overwrite=False, experimental=False, native_module=None):
+    """Experimental document serialization, not active-path Save As."""
+    if not experimental:
+        raise ValueError("Save Copy requires explicit experimental=true")
+    path = str(path or "")
+    if not path:
+        raise ValueError("Save Copy path is required")
+    original_path = str(getattr(song, "file_path", "") or "")
+    if native_module is None:
+        native_module = _load_native_save_module()
+    result = native_module.save_copy(path, overwrite=bool(overwrite))
+    active_path = str(getattr(song, "file_path", "") or "")
+    if active_path != original_path:
+        raise RuntimeError("Save Copy unexpectedly changed active document path")
+    result["active_path_unchanged"] = True
+    result["active_file_path"] = active_path or None
     return result
 
 
@@ -122,7 +155,9 @@ def open_set(
         native_module,
     )
 
-    result = native_module.open_set(path=path, replace_confirmed=True)
+    result = _request_document_exchange(
+        native_module.open_set, path=path, replace_confirmed=True
+    )
     result["current_set_action"] = current_action
     result["source_document_id"] = ctrl.document_id if ctrl else None
     if ctrl:
@@ -149,7 +184,7 @@ def new_set(
         ctrl,
         native_module,
     )
-    result = native_module.new_set(replace_confirmed=True)
+    result = _request_document_exchange(native_module.new_set, replace_confirmed=True)
     result["current_set_action"] = current_action
     result["source_document_id"] = ctrl.document_id if ctrl else None
     if ctrl:
