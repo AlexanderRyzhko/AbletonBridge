@@ -349,8 +349,8 @@ def register_tools(mcp):
     def get_document_persistence_state(ctx: Context) -> str:
         """Read native unsaved-change state without Save, discard, or dialogs.
 
-        Dirty Open/New is refused; native discard is not implemented.
-        A clean result does not guarantee other Open/New preconditions.
+        ALL Open/New is refused because native exchange changes cursor state.
+        Clean/dirty is separate from support; native discard is not implemented.
         """
         ableton = get_ableton_connection()
         result = ableton.send_command("get_document_persistence_state", {})

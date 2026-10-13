@@ -60,7 +60,8 @@ def get_document_persistence_state(song, native_module=None):
     result = native_module.document_state()
     result["file_path"] = str(getattr(song, "file_path", "") or "") or None
     result["native_discard_supported"] = False
-    result["dirty_exchange_refused"] = bool(result["has_unsaved_changes"])
+    result["document_exchange_supported"] = False
+    result["document_exchange_reason"] = "cursor_side_effects"
     return result
 
 

@@ -106,7 +106,9 @@ class PersistenceTests(unittest.TestCase):
         native = _NativeSave()
         native.document_state = lambda: {"has_unsaved_changes": True}
         result = persistence.get_document_persistence_state(_Song("/tmp/source.als"), native)
-        self.assertTrue(result["dirty_exchange_refused"])
+        self.assertTrue(result["has_unsaved_changes"])
+        self.assertFalse(result["document_exchange_supported"])
+        self.assertEqual(result["document_exchange_reason"], "cursor_side_effects")
         self.assertFalse(result["native_discard_supported"])
         self.assertEqual(result["file_path"], "/tmp/source.als")
         self.assertEqual(native.calls, [])
@@ -115,7 +117,9 @@ class PersistenceTests(unittest.TestCase):
         native = _NativeSave()
         native.document_state = lambda: {"has_unsaved_changes": False}
         result = persistence.get_document_persistence_state(_Song(None), native)
-        self.assertFalse(result["dirty_exchange_refused"])
+        self.assertFalse(result["has_unsaved_changes"])
+        self.assertFalse(result["document_exchange_supported"])
+        self.assertEqual(result["document_exchange_reason"], "cursor_side_effects")
         self.assertIsNone(result["file_path"])
 
     def test_dirty_document_refusal_is_client_safe_validation_error(self):
