@@ -116,13 +116,19 @@ def adopt_saved_copy(path):
 
 
 def open_set(path, replace_confirmed=False):
-    _check(_lib.ab_open_set(_path_bytes(path), bool(replace_confirmed)))
-    return {"backend": "live_native_document_request", "path": os.path.realpath(path), "open_requested": True, "ui_used": False}
+    del path, replace_confirmed
+    raise ValueError(
+        "Native Open is unavailable under desktop noninterference: "
+        "document exchange changes cursor state. No UI fallback is allowed"
+    )
 
 
 def new_set(replace_confirmed=False):
-    _check(_lib.ab_new_set(bool(replace_confirmed)))
-    return {"backend": "live_native_document_new", "new_requested": True, "ui_used": False}
+    del replace_confirmed
+    raise ValueError(
+        "Native New is unavailable under desktop noninterference: "
+        "document exchange changes cursor state. No UI fallback is allowed"
+    )
 
 
 def commit_document():

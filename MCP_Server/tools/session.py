@@ -458,10 +458,10 @@ def register_tools(mcp):
         save_as_path: str = "",
         overwrite_save_as: bool = False,
     ) -> str:
-        """Open an absolute .als path without UI automation.
+        """Open endpoint currently refused by native wrapper due to cursor effects.
 
-        Named current Sets are saved first. Untitled Sets are refused unless
-        save_as_path is supplied or discard_current is explicitly true.
+        Document exchange is under investigation. Discard consent does not
+        bypass desktop noninterference or provide native discard support.
         """
         if not os.path.isabs(path):
             raise ValueError("Open Set path must be absolute")
@@ -513,10 +513,10 @@ def register_tools(mcp):
         save_as_path: str = "",
         overwrite_save_as: bool = False,
     ) -> str:
-        """Create a new Set without UI automation.
+        """New endpoint currently refused by native wrapper due to cursor effects.
 
-        Named current Sets are saved first. Untitled Sets are refused unless
-        save_as_path is supplied or discard_current is explicitly true.
+        Document exchange is under investigation. Discard consent does not
+        bypass desktop noninterference or provide native discard support.
         """
         if save_as_path:
             if not os.path.isabs(save_as_path):
