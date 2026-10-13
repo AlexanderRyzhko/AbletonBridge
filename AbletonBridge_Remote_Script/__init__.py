@@ -42,12 +42,14 @@ _MAIN_THREAD_TIMEOUTS = {
 
 _MODIFYING_HANDLERS = {
     # --- Session ---
-    "save_current_set": lambda song, p, ctrl: handlers.persistence.save_current_set(song, ctrl),
+    "save_current_set": lambda song, p, ctrl: handlers.persistence.save_current_set(
+        song, ctrl, experimental=p.get("experimental", False)),
     "save_set_copy": lambda song, p, ctrl: handlers.persistence.save_set_copy(
         song, p.get("path"), p.get("overwrite", False), p.get("experimental", False)
     ),
     "save_set_as": lambda song, p, ctrl: handlers.persistence.save_set_as(
-        song, p.get("path", ""), p.get("overwrite", False), ctrl),
+        song, p.get("path", ""), p.get("overwrite", False), ctrl,
+        experimental=p.get("experimental", False)),
     "open_set": lambda song, p, ctrl: handlers.persistence.open_set(
         song, p.get("path", ""), p.get("discard_current", False),
         p.get("save_as_path", ""), p.get("overwrite_save_as", False), ctrl),
@@ -443,6 +445,7 @@ _MODIFYING_HANDLERS = {
 }
 
 _READONLY_HANDLERS = {
+    "get_document_persistence_state": lambda song, p, ctrl: handlers.persistence.get_document_persistence_state(song),
     # --- Diagnostics ---
     "diagnose_licensing_save_owner": lambda song, p, ctrl: handlers.diagnostics.diagnose_licensing_save_owner(song, ctrl),
 
@@ -961,7 +964,7 @@ class AbletonBridge(ControlSurface):
         response = {"status": "success", "result": {}}
 
         try:
-            if command_type in ("save_current_set", "save_set_as", "save_set_copy", "open_set", "new_set"):
+            if command_type in ("save_current_set", "save_set_as", "save_set_copy", "open_set", "new_set", "get_document_persistence_state"):
                 handlers.persistence.prepare_native_document_adapter()
             if command_type in _MODIFYING_HANDLERS:
                 response = self._dispatch_on_main_thread(command_type, params)

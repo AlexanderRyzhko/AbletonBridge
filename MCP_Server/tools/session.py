@@ -19,6 +19,21 @@ def _save_file_signature(path):
     return (getattr(info, "st_mtime_ns", int(info.st_mtime * 1000000000)), info.st_size)
 
 
+def _verify_als_xml(path):
+    import gzip
+    import xml.etree.ElementTree as ET
+    limit = 32 * 1024 * 1024
+    with gzip.open(path, "rb") as stream:
+        payload = stream.read(limit + 1)
+    if len(payload) > limit:
+        raise RuntimeError("Set copy exceeds 32 MiB XML inspection limit")
+    if b"<!DOCTYPE" in payload or b"<!ENTITY" in payload:
+        raise RuntimeError("Set copy contains XML declarations")
+    root = ET.fromstring(payload)
+    if root.tag != "Ableton" or root.find("LiveSet") is None:
+        raise RuntimeError("Set copy output lacks Ableton/LiveSet XML structure")
+
+
 def register_tools(mcp):
     """Register session & transport tools with the MCP server."""
 
@@ -330,36 +345,68 @@ def register_tools(mcp):
         return json.dumps(result)
 
     @mcp.tool()
-    @_tool_handler("saving current Live Set")
-    def save_current_set(ctx: Context) -> str:
-        """Save the current named Live Set without UI automation.
+    @_tool_handler("getting document persistence state")
+    def get_document_persistence_state(ctx: Context) -> str:
+        """Read native unsaved-change state without Save, discard, or dialogs.
 
-        Refuses Untitled Sets instead of opening a Save As dialog.
+        Dirty Open/New is refused; native discard is not implemented.
+        A clean result does not guarantee other Open/New preconditions.
         """
         ableton = get_ableton_connection()
-        result = ableton.send_command("save_current_set", {})
+        result = ableton.send_command("get_document_persistence_state", {})
+        if type(result.get("has_unsaved_changes")) is not bool:
+            raise RuntimeError("Native document dirty state was not verified")
+        return json.dumps(result)
+
+    @mcp.tool()
+    @_tool_handler("saving current Live Set")
+    def save_current_set(ctx: Context, experimental: bool = False) -> str:
+        """Experimental idle-only named Save; refuses Untitled Sets and UI fallback.
+
+        Requires experimental=true. Broader desktop/undo semantics unverified.
+        """
+        if not experimental:
+            raise ValueError("Named Save requires explicit experimental=true; legacy route blocked")
+        ableton = get_ableton_connection()
+        result = ableton.send_command("save_current_set", {"experimental": True})
+        if (result.get("active_path_verified") is not True or
+                result.get("has_unsaved_changes") is not False):
+            raise RuntimeError("Named Save did not verify active path and clean state")
+        _verify_als_xml(result["file_path"])
+        result["gzip_xml_verified"] = True
         return json.dumps(result)
 
     @mcp.tool()
     @_tool_handler("saving Live Set to an explicit path")
-    def save_set_as(ctx: Context, path: str, overwrite: bool = False) -> str:
-        """Save current Live Set to an absolute .als path without UI automation.
+    def save_set_as(ctx: Context, path: str, overwrite: bool = False,
+                    experimental: bool = False) -> str:
+        """Experimental idle-only Save As through document serialization/bookkeeping.
 
-        Refuses overwrite unless explicitly enabled. Returns only after a new or
-        changed non-empty .als file is visible on disk.
+        Requires experimental=true. Legacy application-view Save is blocked.
+        Verifies gzip/XML, active path and clean-state readback. Other Save/undo
+        semantics and global desktop noninterference remain under investigation.
         """
+        if not experimental:
+            raise ValueError("Save As requires explicit experimental=true; legacy route blocked")
         if not os.path.isabs(path):
             raise ValueError("Save As path must be absolute")
         path = os.path.abspath(path)
         before = _save_file_signature(path)
         ableton = get_ableton_connection()
         result = ableton.send_command(
-            "save_set_as", {"path": path, "overwrite": overwrite}
+            "save_set_as", {"path": path, "overwrite": overwrite,
+                            "experimental": experimental}
         )
+        if (result.get("active_path_verified") is not True or
+                result.get("has_unsaved_changes") is not False or
+                os.path.realpath(result.get("active_file_path") or "") != os.path.realpath(path)):
+            raise RuntimeError("Save As did not verify active path and clean document state")
         for _attempt in range(150):
             current = _save_file_signature(path)
             if current is not None and current[1] > 0 and current != before:
-                result["durable_file_verified"] = True
+                _verify_als_xml(path)
+                result["copy_file_verified"] = True
+                result["gzip_xml_verified"] = True
                 result["file_size"] = current[1]
                 return json.dumps(result)
             time.sleep(0.2)
@@ -378,9 +425,6 @@ def register_tools(mcp):
         active-path readback. XML inspection is capped at 32 MiB decompressed.
         Desktop noninterference remains limited to recorded runtime observations.
         """
-        import gzip
-        import xml.etree.ElementTree as ET
-
         if not experimental:
             raise ValueError("Save Copy requires explicit experimental=true")
         if not os.path.isabs(path) or not path.lower().endswith(".als"):
@@ -397,14 +441,7 @@ def register_tools(mcp):
         for _attempt in range(150):
             current = _save_file_signature(path)
             if current is not None and current[1] > 0 and current != before:
-                limit = 32 * 1024 * 1024
-                with gzip.open(path, "rb") as stream:
-                    payload = stream.read(limit + 1)
-                if len(payload) > limit:
-                    raise RuntimeError("Save Copy exceeds 32 MiB XML inspection limit")
-                root = ET.fromstring(payload)
-                if root.tag != "Ableton" or root.find("LiveSet") is None:
-                    raise RuntimeError("Save Copy output lacks Ableton/LiveSet XML structure")
+                _verify_als_xml(path)
                 result["copy_file_verified"] = True
                 result["gzip_xml_verified"] = True
                 result["file_size"] = current[1]

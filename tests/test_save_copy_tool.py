@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from MCP_Server.tools.session import register_tools
 
@@ -72,6 +72,28 @@ class SaveCopyToolTests(unittest.TestCase):
             with patch("MCP_Server.tools.session.get_ableton_connection", return_value=connection):
                 result = asyncio.run(self.tool(None, target, experimental=True))
         self.assertIn("unchanged active path", result)
+
+
+class DocumentStateToolTests(unittest.TestCase):
+    def setUp(self):
+        mcp = _MCP()
+        register_tools(mcp)
+        self.tool = mcp.tools["get_document_persistence_state"]
+
+    def test_state_read_sends_no_mutation(self):
+        connection = Mock()
+        connection.send_command.return_value = {"has_unsaved_changes": True}
+        with patch("MCP_Server.tools.session.get_ableton_connection", return_value=connection):
+            result = json.loads(asyncio.run(self.tool(None)))
+        self.assertTrue(result["has_unsaved_changes"])
+        connection.send_command.assert_called_once_with("get_document_persistence_state", {})
+
+    def test_unknown_dirty_state_is_not_treated_as_clean(self):
+        connection = Mock()
+        connection.send_command.return_value = {}
+        with patch("MCP_Server.tools.session.get_ableton_connection", return_value=connection):
+            result = asyncio.run(self.tool(None))
+        self.assertIn("dirty state was not verified", result)
 
 
 if __name__ == "__main__":

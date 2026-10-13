@@ -53,8 +53,19 @@ def _request_document_exchange(operation, **params):
         raise
 
 
-def save_current_set(song, ctrl=None, native_module=None):
-    """Save a named Set without focus changes, keystrokes, or UI fallback."""
+def get_document_persistence_state(song, native_module=None):
+    """Read native dirty state without requesting Save or document exchange."""
+    if native_module is None:
+        native_module = _load_native_save_module()
+    result = native_module.document_state()
+    result["file_path"] = str(getattr(song, "file_path", "") or "") or None
+    result["native_discard_supported"] = False
+    result["dirty_exchange_refused"] = bool(result["has_unsaved_changes"])
+    return result
+
+
+def save_current_set(song, ctrl=None, native_module=None, experimental=False):
+    """Experimental idle-only named Save; legacy application-view route refused."""
     file_path = str(getattr(song, "file_path", "") or "")
     if not file_path:
         raise ValueError(
@@ -62,19 +73,21 @@ def save_current_set(song, ctrl=None, native_module=None):
         )
 
     result = save_set_as(song, file_path, overwrite=True, ctrl=ctrl,
-                         native_module=native_module)
+                         native_module=native_module, experimental=experimental)
     result["file_path"] = file_path
     return result
 
 
-def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None):
+def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None, experimental=False):
     """Save current Set to an absolute path through version-locked native adapter."""
-    del song
     path = str(path or "")
     if not path:
         raise ValueError("Save As path is required")
     if native_module is None:
         native_module = _load_native_save_module()
+
+    if experimental is True:
+        return _save_set_as_document(song, path, overwrite, native_module)
 
     result = native_module.save_as(path=path, overwrite=bool(overwrite))
     if ctrl:
@@ -82,10 +95,52 @@ def save_set_as(song, path, overwrite=False, ctrl=None, native_module=None):
     return result
 
 
+def _save_set_as_document(song, path, overwrite, native_module):
+    """Idle-only prototype: verify serialization before document bookkeeping."""
+    import gzip
+    import os
+    import xml.etree.ElementTree as ET
+
+    if getattr(song, "is_playing", True) or getattr(song, "record_mode", True):
+        raise ValueError("Experimental Save As requires stopped playback and recording")
+    copy = save_set_copy(song, path, overwrite=overwrite, experimental=True,
+                         native_module=native_module)
+    with gzip.open(path, "rb") as stream:
+        xml = stream.read(32 * 1024 * 1024 + 1)
+    if len(xml) > 32 * 1024 * 1024:
+        raise ValueError("Serialized copy exceeds experimental Save As XML limit")
+    if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml:
+        raise ValueError("Serialized copy contains XML declarations; refusing adoption")
+    root = ET.fromstring(xml)
+    if root.tag != "Ableton" or root.find("LiveSet") is None:
+        raise ValueError("Serialized copy lacks Ableton/LiveSet XML; refusing adoption")
+    try:
+        native_module.adopt_saved_copy(path)
+    except Exception as exc:
+        raise ValueError(
+            "Set copy written, but Save As finalization was not verified; "
+            "read active path and dirty state before any further action; do not retry"
+        ) from exc
+    active = str(getattr(song, "file_path", "") or "")
+    state = native_module.document_state()
+    if os.path.realpath(active) != os.path.realpath(path) or state.get("has_unsaved_changes") is not False:
+        raise ValueError(
+            "Save As bookkeeping failed path/dirty readback; do not retry"
+        )
+    return {"backend": "live_native_document_serializer_and_bookkeeping",
+            "path": path, "active_file_path": active, "save_requested": True,
+            "copy_file_verified": True, "gzip_xml_verified": True,
+            "has_unsaved_changes": False, "active_path_verified": True,
+            "ui_automation_used": False, "desktop_noninterference_verified": False,
+            "experimental": True, "snapshot_backend": copy["backend"]}
+
+
 def save_set_copy(song, path, overwrite=False, experimental=False, native_module=None):
     """Experimental document serialization, not active-path Save As."""
-    if not experimental:
+    if experimental is not True:
         raise ValueError("Save Copy requires explicit experimental=true")
+    if type(overwrite) is not bool:
+        raise ValueError("overwrite must be a boolean")
     path = str(path or "")
     if not path:
         raise ValueError("Save Copy path is required")
@@ -113,6 +168,9 @@ def _protect_current_set(
     if discard_current:
         return "explicit_discard"
     if current_path:
+        state = native_module.document_state()
+        if state.get("has_unsaved_changes") is False:
+            return "already_clean"
         save_current_set(song, ctrl=ctrl, native_module=native_module)
         return "saved_named_set"
     if save_as_path:

@@ -1,7 +1,10 @@
 import importlib.util
+import gzip
+import tempfile
 import sys
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -30,20 +33,19 @@ persistence = sys.modules[PACKAGE + ".persistence"]
 class _Song:
     def __init__(self, file_path):
         self.file_path = file_path
+        self.is_playing = False
+        self.record_mode = False
 
 
 class _NativeSave:
     def __init__(self):
         self.calls = []
 
+    def document_state(self):
+        return {"has_unsaved_changes": True}
+
     def save_as(self, path, overwrite=False):
-        self.calls.append((path, overwrite))
-        return {
-            "backend": "live_native_lfile",
-            "path": path,
-            "save_requested": True,
-            "ui_used": False,
-        }
+        raise ValueError("Legacy native Save is unavailable under desktop noninterference")
 
     def open_set(self, path, replace_confirmed=False):
         self.calls.append(("open_set", path, replace_confirmed))
@@ -71,6 +73,51 @@ class _NativeSave:
 
 
 class PersistenceTests(unittest.TestCase):
+    def test_named_save_forwards_explicit_experimental_consent(self):
+        native = _NativeSave()
+        with patch.object(persistence, "save_set_as", return_value={}) as save:
+            result = persistence.save_current_set(_Song("/tmp/source.als"),
+                native_module=native, experimental=True)
+        self.assertEqual(result["file_path"], "/tmp/source.als")
+        self.assertTrue(save.call_args.kwargs["overwrite"])
+        self.assertTrue(save.call_args.kwargs["experimental"])
+
+    def test_open_clean_named_set_does_not_invoke_save(self):
+        native = _NativeSave()
+        native.document_state = lambda: {"has_unsaved_changes": False}
+        result = persistence.open_set(_Song("/tmp/source.als"), "/tmp/next.als",
+                                      native_module=native)
+        self.assertEqual(native.calls, [("open_set", "/tmp/next.als", True)])
+        self.assertEqual(result["current_set_action"], "already_clean")
+
+    def test_dirty_save_refusal_prevents_open_and_new(self):
+        def blocked(*args, **kwargs):
+            raise ValueError("Full Save/Save As is unavailable under desktop noninterference")
+        for operation, params in ((persistence.open_set, {"path": "/tmp/next.als"}),
+                                  (persistence.new_set, {})):
+            native = _NativeSave()
+            native.save_as = blocked
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaisesRegex(ValueError, "desktop noninterference"):
+                    operation(_Song("/tmp/source.als"), native_module=native, **params)
+            self.assertEqual(native.calls, [])
+
+    def test_document_state_reports_dirty_without_mutation(self):
+        native = _NativeSave()
+        native.document_state = lambda: {"has_unsaved_changes": True}
+        result = persistence.get_document_persistence_state(_Song("/tmp/source.als"), native)
+        self.assertTrue(result["dirty_exchange_refused"])
+        self.assertFalse(result["native_discard_supported"])
+        self.assertEqual(result["file_path"], "/tmp/source.als")
+        self.assertEqual(native.calls, [])
+
+    def test_document_state_reports_clean_untitled(self):
+        native = _NativeSave()
+        native.document_state = lambda: {"has_unsaved_changes": False}
+        result = persistence.get_document_persistence_state(_Song(None), native)
+        self.assertFalse(result["dirty_exchange_refused"])
+        self.assertIsNone(result["file_path"])
+
     def test_dirty_document_refusal_is_client_safe_validation_error(self):
         message = (
             "Current Set has unsaved changes; native discard is not implemented; "
@@ -102,6 +149,15 @@ class PersistenceTests(unittest.TestCase):
             persistence.save_set_copy(_Song(None), "/tmp/copy.als", native_module=native)
         self.assertEqual(native.calls, [])
 
+    def test_save_copy_rejects_truthy_nonboolean_flags_before_mutation(self):
+        native = _NativeSave()
+        for flags in ({"experimental": "false"},
+                      {"experimental": True, "overwrite": "false"}):
+            with self.subTest(flags=flags), self.assertRaises(ValueError):
+                persistence.save_set_copy(_Song(None), "/tmp/copy.als",
+                                         native_module=native, **flags)
+        self.assertEqual(native.calls, [])
+
     def test_save_copy_retains_active_path(self):
         native = _NativeSave()
         result = persistence.save_set_copy(
@@ -131,25 +187,12 @@ class PersistenceTests(unittest.TestCase):
                                       native_module=native)
         self.assertEqual(native.calls, [])
 
-    def test_save_current_set_uses_explicit_path_without_licensing_menu(self):
+    def test_save_current_set_refuses_legacy_route(self):
         native = _NativeSave()
-
-        result = persistence.save_current_set(
-            _Song("/tmp/ABKB-3/disposable.als"),
-            native_module=native,
-        )
-
-        self.assertEqual(native.calls, [("/tmp/ABKB-3/disposable.als", True)])
-        self.assertEqual(
-            result,
-            {
-                "backend": "live_native_lfile",
-                "path": "/tmp/ABKB-3/disposable.als",
-                "file_path": "/tmp/ABKB-3/disposable.als",
-                "save_requested": True,
-                "ui_used": False,
-            },
-        )
+        with self.assertRaisesRegex(ValueError, "desktop noninterference"):
+            persistence.save_current_set(_Song("/tmp/ABKB-3/disposable.als"),
+                                         native_module=native)
+        self.assertEqual(native.calls, [])
 
     def test_save_current_set_refuses_untitled_before_native_call(self):
         native = _NativeSave()
@@ -166,19 +209,12 @@ class PersistenceTests(unittest.TestCase):
             persistence.save_current_set(_Song("/tmp/ABKB-3/disposable.als"),
                                          native_module=native)
 
-    def test_save_set_as_uses_native_adapter_without_ui(self):
+    def test_save_set_as_without_experiment_refuses_legacy_route(self):
         native = _NativeSave()
-
-        result = persistence.save_set_as(
-            _Song(None),
-            "/tmp/ABKB-3/disposable.als",
-            overwrite=True,
-            native_module=native,
-        )
-
-        self.assertEqual(native.calls, [("/tmp/ABKB-3/disposable.als", True)])
-        self.assertEqual(result["backend"], "live_native_lfile")
-        self.assertFalse(result["ui_used"])
+        with self.assertRaisesRegex(ValueError, "desktop noninterference"):
+            persistence.save_set_as(_Song(None), "/tmp/ABKB-3/disposable.als",
+                                    overwrite=True, native_module=native)
+        self.assertEqual(native.calls, [])
 
     def test_save_set_as_requires_path_before_import(self):
         with self.assertRaisesRegex(ValueError, "path is required"):
@@ -194,21 +230,12 @@ class PersistenceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             persistence.prepare_native_save_as(native_module=native)
 
-    def test_open_set_saves_named_current_set_before_native_request(self):
+    def test_open_dirty_named_set_refuses_legacy_save_first(self):
         native = _NativeSave()
-
-        result = persistence.open_set(
-            _Song("/tmp/ABKB-3/current.als"),
-            "/tmp/ABKB-3/next.als",
-            native_module=native,
-        )
-
-        self.assertEqual(
-            native.calls, [("/tmp/ABKB-3/current.als", True),
-                           ("open_set", "/tmp/ABKB-3/next.als", True)]
-        )
-        self.assertEqual(result["current_set_action"], "saved_named_set")
-        self.assertFalse(result["ui_used"])
+        with self.assertRaisesRegex(ValueError, "desktop noninterference"):
+            persistence.open_set(_Song("/tmp/ABKB-3/current.als"), "/tmp/ABKB-3/next.als",
+                                 native_module=native)
+        self.assertEqual(native.calls, [])
 
     def test_open_set_refuses_untitled_without_explicit_policy(self):
         native = _NativeSave()
@@ -237,18 +264,12 @@ class PersistenceTests(unittest.TestCase):
         )
         self.assertEqual(result["current_set_action"], "explicit_discard")
 
-    def test_new_set_saves_named_current_set_before_native_request(self):
+    def test_new_dirty_named_set_refuses_legacy_save_first(self):
         native = _NativeSave()
         song = _Song("/tmp/ABKB-3/current.als")
-
-        result = persistence.new_set(
-            song,
-            native_module=native,
-        )
-
-        self.assertEqual(native.calls, [("/tmp/ABKB-3/current.als", True), ("new_set", True)])
-        self.assertEqual(result["current_set_action"], "saved_named_set")
-        self.assertFalse(result["ui_used"])
+        with self.assertRaisesRegex(ValueError, "desktop noninterference"):
+            persistence.new_set(song, native_module=native)
+        self.assertEqual(native.calls, [])
 
     def test_new_set_refuses_untitled_without_explicit_policy(self):
         native = _NativeSave()
@@ -257,6 +278,91 @@ class PersistenceTests(unittest.TestCase):
             persistence.new_set(_Song(None), native_module=native)
 
         self.assertEqual(native.calls, [])
+
+
+class DocumentSaveAsTests(unittest.TestCase):
+    def make_native(self, song, payload=b"<Ableton><LiveSet/></Ableton>"):
+        native = _NativeSave()
+        native.dirty = True
+        def copy(path, overwrite=False):
+            native.calls.append(("copy", path))
+            with gzip.open(path, "wb") as stream:
+                stream.write(payload)
+            return {"backend": "live_native_document_serializer"}
+        def adopt(path):
+            native.calls.append(("adopt", path))
+            song.file_path = path
+            native.dirty = False
+        native.save_copy = copy
+        native.adopt_saved_copy = adopt
+        native.document_state = lambda: {"has_unsaved_changes": native.dirty}
+        return native
+
+    def test_verified_copy_then_owned_bookkeeping(self):
+        song = _Song(None)
+        native = self.make_native(song)
+        with tempfile.TemporaryDirectory() as directory:
+            target = str(Path(directory) / "named.als")
+            result = persistence.save_set_as(song, target, native_module=native,
+                                             experimental=True)
+        self.assertEqual(native.calls, [("copy", target), ("adopt", target)])
+        self.assertTrue(result["active_path_verified"])
+        self.assertFalse(result["has_unsaved_changes"])
+        self.assertTrue(result["experimental"])
+        self.assertFalse(result["desktop_noninterference_verified"])
+
+    def test_playback_or_recording_refuses_before_copy(self):
+        for playing, recording in ((True, False), (False, True)):
+            song = _Song(None)
+            song.is_playing, song.record_mode = playing, recording
+            native = self.make_native(song)
+            with self.assertRaisesRegex(ValueError, "requires stopped"):
+                persistence.save_set_as(song, "/tmp/unused.als", native_module=native,
+                                        experimental=True)
+            self.assertEqual(native.calls, [])
+
+    def test_invalid_set_structure_refuses_before_adoption(self):
+        song = _Song("/tmp/original.als")
+        native = self.make_native(song, b"<not_a_set/>")
+        with tempfile.TemporaryDirectory() as directory:
+            target = str(Path(directory) / "copy.als")
+            with self.assertRaisesRegex(ValueError, "refusing adoption"):
+                persistence.save_set_as(song, target, native_module=native,
+                                        experimental=True)
+        self.assertEqual(native.calls, [("copy", target)])
+        self.assertEqual(song.file_path, "/tmp/original.als")
+
+    def test_xml_declarations_refuse_before_adoption(self):
+        song = _Song(None)
+        native = self.make_native(song, b'<!DOCTYPE Ableton><Ableton><LiveSet/></Ableton>')
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "XML declarations"):
+                persistence.save_set_as(song, str(Path(directory) / "copy.als"),
+                                        native_module=native, experimental=True)
+        self.assertEqual(len(native.calls), 1)
+
+    def test_adoption_error_reports_partial_persistence_without_retry(self):
+        song = _Song(None)
+        native = self.make_native(song)
+        def fail(path):
+            native.calls.append(("adopt_failed", path))
+            raise RuntimeError("private native failure")
+        native.adopt_saved_copy = fail
+        with tempfile.TemporaryDirectory() as directory:
+            target = str(Path(directory) / "copy.als")
+            with self.assertRaisesRegex(ValueError, "Set copy written.*do not retry"):
+                persistence.save_set_as(song, target, native_module=native,
+                                        experimental=True)
+        self.assertEqual(native.calls, [("copy", target), ("adopt_failed", target)])
+
+    def test_failed_path_readback_is_not_success(self):
+        song = _Song("/tmp/original.als")
+        native = self.make_native(song)
+        native.adopt_saved_copy = lambda path: setattr(native, "dirty", False)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "failed path/dirty readback"):
+                persistence.save_set_as(song, str(Path(directory) / "copy.als"),
+                                        native_module=native, experimental=True)
 
 
 if __name__ == "__main__":
